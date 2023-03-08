@@ -158,3 +158,40 @@ def line_plot(v1, v2, dt, group_labels, x_label, y_label, title: str = None):
     plt.show()
 
     return True
+
+
+def tracks_plot(tracks, dx: float = 0.178, im_shape: tuple = None, x_label: str = None, y_label: str = None,
+                title: str = None, n_ticks: tuple = None):
+    """
+    Plots the position of centroids specified by tracks over time.
+    :param tracks: n by t by 2 array specifying coordinates of n objects at timepoints t.
+    :param dx: spatial resolution in microns.
+    :param im_shape: tuple with image shape in (rows, cols) to set axes limits.
+    :param x_label: string to be used as x-label.
+    :param y_label: string to be used as y-label.
+    :param title: string to be used for plot title.
+    :param n_ticks: tuple with (number of y_ticks, number of x_ticks).
+    :return: True when completed.
+    """
+
+    palette = plt.colormaps.get('jet')
+    colors = palette(np.linspace(0, 1, tracks.shape[1]))
+    new_tracks = np.empty([tracks.shape[1], tracks.shape[0], 2])
+    fig, ax = plt.subplots(1, 1)
+    for n, this_nucleus in enumerate(tracks):
+        for t, this_timepoint in enumerate(this_nucleus):
+            new_tracks[t, n, :] = this_timepoint
+
+    for t, this_timepoint in enumerate(new_tracks):
+        ax.scatter(this_timepoint[:, 0], this_timepoint[:, 1], c=[colors[t] for _ in this_timepoint], s=30)
+    xticks = np.arange(0, im_shape[1] * dx + dx, im_shape[1] * dx / n_ticks[1])
+    yticks = np.arange(0, im_shape[0] * dx + dx, im_shape[1] * dx / n_ticks[0])
+    ax.set_xlim([0, im_shape[1]])
+    ax.set_ylim([0, im_shape[0]])
+    ax.set_xticks(np.linspace(0, im_shape[1], n_ticks[1] + 1), labels=[str(int(x)) for x in xticks])
+    ax.set_yticks(np.linspace(0, im_shape[0], n_ticks[0] + 1), labels=[str(int(y)) for y in yticks])
+    ax.set_ylabel(y_label)
+    ax.set_xlabel(x_label)
+    plt.title(title)
+    plt.show()
+    return True
