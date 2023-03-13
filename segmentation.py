@@ -1,18 +1,9 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[144]:
-
-
 # Importing all necessary toolboxes
 import matplotlib.pyplot as plt
 import numpy
 from skimage import io, filters
 from skimage.filters import threshold_otsu
-from skimage.morphology import binary_erosion
-
-
-# In[216]:
+from skimage.morphology import binary_erosion, binary_opening, disk
 
 
 # Defining segmentation function 
@@ -29,8 +20,8 @@ def segmentation(im_raw):
     im_range = len(im_mip)
     
     # Initialize the structuring element for binary erosion (to separate the elements)
-    se = numpy.zeros((9,9), dtype=numpy.int16) # Creating a 9x9 square of 0s
-    se[4,:] = 1
+    se = numpy.zeros((9, 9), dtype=numpy.int16) # Creating a 9x9 square of 0s
+    se[4, :] = 1
     
     # Creating loop to binarize the images
     for t in range(0,im_range):
@@ -39,22 +30,11 @@ def segmentation(im_raw):
         mask = im_mip[t] > t_otsu
         
         # Performing binary erosion on the mask to separate the nuclei
-        im_bin_erode = binary_erosion(mask, footprint=se)
+        im_bin_erode = binary_opening(mask, footprint=disk(5))
         
         im_binarize.append(im_bin_erode)
         
-    return im_binarize # Return the 3D array of binarized images
-
-
-# In[220]:
-
-
-#example = segmentation('n6-n8_tp_1_to_50.tif')
-
-#plt.imshow(example[40], cmap = 'binary_r')
-
-
-# In[ ]:
+    return numpy.array(im_binarize)  # Return the 3D array of binarized images
 
 
 

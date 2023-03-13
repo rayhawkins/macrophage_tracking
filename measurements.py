@@ -20,6 +20,8 @@ def count_objects(tracks, mask):
     counts = np.zeros([tracks.shape[1]])
     for this_nucleus in tracks:
         for t, this_timepoint in enumerate(this_nucleus):
+            if this_timepoint is None:
+                continue
             if mask[int(this_timepoint[0]), int(this_timepoint[1])] == 1:
                 counts[t] += 1
 
@@ -37,6 +39,9 @@ def measure_speed(tracks, dt: float = 30., dx: float = 0.178):
     speeds = np.zeros([tracks.shape[0], tracks.shape[1] - 1])
     for n, this_nucleus in enumerate(tracks):
         for t, this_timepoint in enumerate(this_nucleus[:-1]):
+            if this_timepoint is None or this_nucleus[t + 1] is None:
+                speeds[n, t] = None
+                continue
             delta_x = (this_timepoint[1] - this_nucleus[t + 1][1]) * dx
             delta_y = this_timepoint[0] - this_nucleus[t + 1][0] * dx
             distance = np.sqrt(delta_x**2 + delta_y**2)
@@ -59,6 +64,9 @@ def measure_directedness(tracks, goals: np.ndarray):
     directedness = np.zeros([tracks.shape[0], tracks.shape[1] - 1])
     for n, this_nucleus in enumerate(tracks):
         for t, this_timepoint in enumerate(this_nucleus[:-1]):
+            if this_timepoint is None or this_nucleus[t + 1] is None:
+                directedness[n, t] = None
+                continue
             displacement = [this_timepoint[1] - this_nucleus[t + 1][1], this_timepoint[0] - this_nucleus[t + 1][0]]
             if goals.ndim == 2:  # Different goal for each object
                 displacement_goal = [goals[n, 1] - this_timepoint[1], goals[n, 0] - this_timepoint[0]]
@@ -175,15 +183,15 @@ def tracks_plot(tracks, dx: float = 0.178, im_shape: tuple = None, x_label: str 
     """
 
     palette = plt.colormaps.get('jet')
-    colors = palette(np.linspace(0, 1, tracks.shape[1]))
-    new_tracks = np.empty([tracks.shape[1], tracks.shape[0], 2])
+    colors = palette(np.linspace(0, 1, tracks.shape[0]))  # Different color for each object
     fig, ax = plt.subplots(1, 1)
     for n, this_nucleus in enumerate(tracks):
         for t, this_timepoint in enumerate(this_nucleus):
-            new_tracks[t, n, :] = this_timepoint
+            if this_timepoint is None:
+                continue
+            else:
+                ax.scatter([this_timepoint[0]], [this_timepoint[1]], c=[colors[n]], s=30)
 
-    for t, this_timepoint in enumerate(new_tracks):
-        ax.scatter(this_timepoint[:, 0], this_timepoint[:, 1], c=[colors[t] for _ in this_timepoint], s=30)
     xticks = np.arange(0, im_shape[1] * dx + dx, im_shape[1] * dx / n_ticks[1])
     yticks = np.arange(0, im_shape[0] * dx + dx, im_shape[1] * dx / n_ticks[0])
     ax.set_xlim([0, im_shape[1]])
