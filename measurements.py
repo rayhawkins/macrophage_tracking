@@ -1,83 +1,91 @@
-# Add code here for determining speed, directedness, number, etc. from tracked macrophages
-# Input is nuclei tracks (n by t by 2 numpy arrays where n is the number of macrophages, t is the number of timepoints, 
-# and 2 corresponds to (x,y) coordinates of that nucleus at that timepoint
-# Output is measurements in arrays and plots that allow visualization of the measured parameters
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import pandas as pd
 from scipy import stats
+from tqdm import tqdm
+import skimage.registration as skr
+import trackpy as tp
+from copy import deepcopy
 
 
-def count_objects(tracks, mask):
-    """
-    Counts the number of objects given in tracks that are within the region defined by mask for each timepoint.
-    :param tracks: n by t by 2 array specifying coordinates of n objects at timepoints t.
-    :param mask: binary image specifying region within which counting will occur.
-    :return: 1 x t array containing number of objects within the region at each timepoint.
-    """
+def piv_measurements(img, goal):
+    # compute the optical flow: for every slice in the stack
+    nr, nc = img.shape[1:]
+    v = np.empty([img.shape[0] - 1, nr, nc])
+    u = np.empty([img.shape[0] - 1, nr, nc])
 
-    counts = np.zeros([tracks.shape[1]])
-    for this_nucleus in tracks:
-        for t, this_timepoint in enumerate(this_nucleus):
-            if this_timepoint is None:
-                continue
-            if mask[int(this_timepoint[0]), int(this_timepoint[1])] == 1:
-                counts[t] += 1
+    speeds = [None for _ in range(img.shape[0] - 1)]
+    directedness = [None for _ in range(img.shape[0] - 1)]
+    for slice_index in tqdm(range(img.shape[0] - 1), ascii=True, desc='PIV measurements'):
+        # compute the optical flow between the current and the next slice.
+        v[slice_index], u[slice_index] = skr.optical_flow_ilk(img[slice_index], img[slice_index + 1], radius=15)
+        flow_magnitude = np.sqrt(u[slice_index] ** 2 + v[slice_index] ** 2)
 
-    return counts
+        # get speed by magnitude above low threshold
+        speeds[slice_index] = np.mean(flow_magnitude[flow_magnitude > 0])
 
+        # get directedness by dot product with goal
+        this_directedness = []
+        for r in range(nr):
+            for c in range(nc):
+                if flow_magnitude[r, c] < 0.5:
+                    continue
+                displacement_goal = [r - goal[0], c - goal[1]]
+                u_ = u[slice_index, r, c]
+                v_ = v[slice_index, r, c]
+                dot_product = np.dot([v_, u_], displacement_goal)
+                norms = np.linalg.norm([v_, u_]) * np.linalg.norm(displacement_goal)
+                alpha = np.arccos(dot_product / norms)
+                this_directedness.append(1 - abs((alpha - np.pi) / np.pi))
+        directedness[slice_index] = np.nanmean(this_directedness)
 
-def measure_speed(tracks, dt: float = 30., dx: float = 0.178):
-    """
-    Measures speed as the pythagorean distance travelled in one timepoint divided by the time resolution.
-    :param tracks: n by t by 2 array specifying coordinates of n objects at timepoints t.
-    :param dt: time resolution in seconds.
-    :param dx: spatial resolution in microns/pixel.
-    :return: n x t array containing object speed at each timepoint in microns/second.
-    """
-    speeds = np.zeros([tracks.shape[0], tracks.shape[1] - 1])
-    for n, this_nucleus in enumerate(tracks):
-        for t, this_timepoint in enumerate(this_nucleus[:-1]):
-            if this_timepoint is None or this_nucleus[t + 1] is None:
-                speeds[n, t] = None
-                continue
-            delta_x = (this_timepoint[1] - this_nucleus[t + 1][1]) * dx
-            delta_y = this_timepoint[0] - this_nucleus[t + 1][0] * dx
-            distance = np.sqrt(delta_x**2 + delta_y**2)
-            speeds[n, t] = distance / dt
-
-    return speeds
+    return speeds, directedness
 
 
-def measure_directedness(tracks, goals: np.ndarray):
-    """
-    Measures the difference in angle between the direction of motion of the objects defined in tracks and the
-    vector that points from the object's location to the coordinate defined by goal.
-    Normalizes the difference in angle
-    by abs[angle (in rad) - pi] / pi so that a degree difference of 180 returns a directedness of 0 and a degree
-    difference of 0, 360 returns a directedness of 1.
-    :param tracks: n by t by 2 array specifying coordinates of n objects at timepoints t.
-    :param goals: n by 2 array specifying (x,y) goals for each object, or tuple defining one goal for all objects.
-    :return: directedness measure for each object at each timepoint.
-    """
-    directedness = np.zeros([tracks.shape[0], tracks.shape[1] - 1])
-    for n, this_nucleus in enumerate(tracks):
-        for t, this_timepoint in enumerate(this_nucleus[:-1]):
-            if this_timepoint is None or this_nucleus[t + 1] is None:
-                directedness[n, t] = None
-                continue
-            displacement = [this_timepoint[1] - this_nucleus[t + 1][1], this_timepoint[0] - this_nucleus[t + 1][0]]
-            if goals.ndim == 2:  # Different goal for each object
-                displacement_goal = [goals[n, 1] - this_timepoint[1], goals[n, 0] - this_timepoint[0]]
-            elif goals.ndim == 1:  # Same goal for each object
-                displacement_goal = [goals[1] - this_timepoint[1], goals[0] - this_timepoint[0]]
-            dot_product = np.dot(displacement, displacement_goal)
-            norms = np.linalg.norm(displacement)*np.linalg.norm(displacement_goal)
-            alpha = np.arccos(dot_product/norms)
-            directedness[n, t] = abs((alpha - np.pi) / np.pi)
+def trackpy_measurements(csv, goal, mask=np.ones([512, 512])):
+    tp.quiet()
+    frames = np.unique(csv['frame'])
+    counts = [0 for _ in range(frames.size)]
 
-    return directedness
+    t = tp.link(csv, 15, memory=11)
+    t1 = tp.filter_stubs(t, 4)
+
+    # tp.plot_traj(t1)
+
+    speeds = [None for _ in range(frames.size - 1)]
+    directedness = [None for _ in range(frames.size - 1)]
+
+    for s, slice_num in tqdm(enumerate(frames[:-1]), ascii=True, desc='Trackpy measurements'):
+        slice_index = slice_num//10
+        these_particles = t1[t1['frame'] == slice_num]
+        next_particles = t1[t1['frame'] == frames[s+1]]
+        these_particle_ids = np.unique(these_particles['particle'])
+        next_particle_ids = np.unique(next_particles['particle'])
+
+        these_speeds = []
+        these_directedness = []
+        for this_particle_id in these_particle_ids:
+            this_particle = these_particles[these_particles['particle'] == this_particle_id]
+            this_coord = [this_particle.iloc[0]['y'], this_particle.iloc[0]['x']]
+            if mask[this_coord[0], this_coord[1]]:
+                counts[slice_index] += 1
+            if this_particle_id in next_particle_ids:
+                next_particle = next_particles[next_particles['particle'] == this_particle_id]
+                next_coord = [next_particle.iloc[0]['y'], next_particle.iloc[0]['x']]
+                displacement = np.sqrt((this_coord[0] - next_coord[0]) ** 2 + (this_coord[1] - next_coord[1]) ** 2)
+                these_speeds.append(displacement)
+                displacement_goal = [this_coord[0] - goal[0], this_coord[1] - goal[1]]
+
+                dot_product = np.dot(displacement, displacement_goal)
+                norms = np.linalg.norm(displacement) * np.linalg.norm(displacement_goal)
+                alpha = np.arccos(dot_product / norms)
+                these_directedness.append(1 - abs((alpha - np.pi) / np.pi))
+
+        speeds[slice_index] = np.nanmean(these_speeds)
+        directedness[slice_index] = np.nanmean(these_directedness)
+
+    return speeds, directedness, counts
 
 
 def set_plot_params():
@@ -109,8 +117,12 @@ def bar_plot(v1, v2, x_labels, y_label, title: str = None, method: str = None):
     """
 
     if method is not None:
-        if method == 'MW':
+        if method == 'MW':  # Mann-whitney U-test
             s, p = stats.mannwhitneyu(v1, v2)
+        elif method == 'T':  # Independent t-test
+            s, p = stats.ttest_ind(v1, v2, equal_var=False)
+        elif method == 'PT':  # Paired t-test
+            s, p = stats.ttest_rel(v1, v2)
 
     labels = np.expand_dims(np.array([x_labels[0] for _ in v1] + [x_labels[1] for _ in v2]), axis=1)
     all_data = np.expand_dims(np.concatenate((v1, v2), axis=0), axis=1)
@@ -130,15 +142,17 @@ def bar_plot(v1, v2, x_labels, y_label, title: str = None, method: str = None):
         plt.title(title)
     plt.show()
 
+    print(p)
     return True
 
 
-def line_plot(v1, v2, dt, group_labels, x_label, y_label, title: str = None):
+def line_plot(v1, v2, dt, wound_slice, group_labels, x_label, y_label, title: str = None):
     """
     Plots a box plot comparing two groups, including the result of the statistical test specified by method.
     :param v1: n x t array containing values for group 1.
     :param v2: n x t array containing values for group 2.
     :param dt: temporal resolution in seconds.
+    :param wound_slice: timepoint at which wound occurs.
     :param group_labels: list of two strings containing labels for group v1 and v2.
     :param x_label: string of label for the x-axis.
     :param y_label: string of label for the y-axis.
@@ -149,16 +163,18 @@ def line_plot(v1, v2, dt, group_labels, x_label, y_label, title: str = None):
     labels = np.expand_dims(np.array([group_labels[0] for _ in np.ravel(v1)] +
                                      [group_labels[1] for _ in np.ravel(v2)]), axis=1)
     all_data = np.expand_dims(np.ravel(np.concatenate((v1, v2), axis=0)), axis=1)
-    timepoints = np.expand_dims(np.ravel(np.array([np.arange(0, dt*v1.shape[1], dt) for _ in v1] +
-                                [np.arange(0, dt*v1.shape[1], dt) for _ in v2])), axis=1)
+    timepoints = np.expand_dims(np.ravel(np.array([np.arange(-wound_slice*dt, dt*(v1.shape[1] - wound_slice), dt) for _ in v1] +
+                                [np.arange(-wound_slice*dt, dt*(v1.shape[1] - wound_slice), dt) for _ in v2])), axis=1)
     df = pd.DataFrame(np.concatenate((all_data, timepoints, labels), axis=1),
                       columns=['value', 'time', 'label'])
     df['value'] = df['value'].astype('float')
     df['time'] = df['time'].astype('float')
 
-    ax = sns.lineplot(x='time', y='value', hue='label', data=df, ci=68, err_style='band',
+    ax = sns.lineplot(x='time', y='value', hue='label', data=df, errorbar=('ci', 68), err_style='band',
                       lw=3, legend=False, palette=a_palette)
     ax.legend(labels=[group_labels[0], '_no_legend_', group_labels[1]], frameon=False)
+    ax.set_xlim([timepoints[0], timepoints[-1]])
+    # ax.set_ylim(bottom=0)
     ax.set_ylabel(y_label)
     ax.set_xlabel(x_label)
     if title is not None:
@@ -168,38 +184,23 @@ def line_plot(v1, v2, dt, group_labels, x_label, y_label, title: str = None):
     return True
 
 
-def tracks_plot(tracks, dx: float = 0.178, im_shape: tuple = None, x_label: str = None, y_label: str = None,
-                title: str = None, n_ticks: tuple = None):
-    """
-    Plots the position of centroids specified by tracks over time.
-    :param tracks: n by t by 2 array specifying coordinates of n objects at timepoints t.
-    :param dx: spatial resolution in microns.
-    :param im_shape: tuple with image shape in (rows, cols) to set axes limits.
-    :param x_label: string to be used as x-label.
-    :param y_label: string to be used as y-label.
-    :param title: string to be used for plot title.
-    :param n_ticks: tuple with (number of y_ticks, number of x_ticks).
-    :return: True when completed.
-    """
+def remove_outliers(arr, th):
+    new_arr = deepcopy(arr)
+    # Get rid of an outlier in control speed
+    for t, this_experiment in enumerate(new_arr):
+        for s, this_val in enumerate(this_experiment[:-1]):
+            if this_val > th * this_experiment[s + 1]:
+                new_arr[t][s] = this_experiment[s + 1]
+    return new_arr
 
-    palette = plt.colormaps.get('jet')
-    colors = palette(np.linspace(0, 1, tracks.shape[0]))  # Different color for each object
-    fig, ax = plt.subplots(1, 1)
-    for n, this_nucleus in enumerate(tracks):
-        for t, this_timepoint in enumerate(this_nucleus):
-            if this_timepoint is None:
-                continue
-            else:
-                ax.scatter([this_timepoint[0]], [this_timepoint[1]], c=[colors[n]], s=30)
 
-    xticks = np.arange(0, im_shape[1] * dx + dx, im_shape[1] * dx / n_ticks[1])
-    yticks = np.arange(0, im_shape[0] * dx + dx, im_shape[1] * dx / n_ticks[0])
-    ax.set_xlim([0, im_shape[1]])
-    ax.set_ylim([0, im_shape[0]])
-    ax.set_xticks(np.linspace(0, im_shape[1], n_ticks[1] + 1), labels=[str(int(x)) for x in xticks])
-    ax.set_yticks(np.linspace(0, im_shape[0], n_ticks[0] + 1), labels=[str(int(y)) for y in yticks])
-    ax.set_ylabel(y_label)
-    ax.set_xlabel(x_label)
-    plt.title(title)
-    plt.show()
-    return True
+def normalize_plots(arr, slice_nums, method='mean'):
+    new_arr = deepcopy(arr)
+    for t, this_experiment in enumerate(new_arr):
+        if method == 'mean':
+            new_arr[t] = new_arr[t]/np.mean(new_arr[t][slice_nums[0]:slice_nums[1]])
+        elif method == 'median':
+            new_arr[t] = new_arr[t] / np.median(new_arr[t][slice_nums[0]:slice_nums[1]])
+        elif method == 'subtract':
+            new_arr[t] = new_arr[t] - int(np.mean(new_arr[t][slice_nums[0]:slice_nums[1]]))
+    return new_arr

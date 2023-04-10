@@ -1,34 +1,19 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[97]:
-
-
-import numpy as np
-import matplotlib.pyplot as plt
-import skimage.io as skio
 from skimage import io, filters
-from skimage.filters import sobel
-from skimage.morphology import disk, square, opening, binary_erosion
+from skimage.morphology import disk, opening
 from skimage.measure import regionprops, label
 
 
-# In[101]:
-
-
-def NucleiCount(image, mask):
+def NucleiCount(raw, mask):
     """
     Counts the number of macrophage nuclei that are within the region defined by mask for each timepoint.
-    :param image: t by rows by columns image array specifying coordinates of images at timepoints t.
+    :param raw: t by rows by columns image array specifying coordinates of images at timepoints t.
     :param mask: binary image specifying region within which counting will occur.
     :return: t x (nuclei count) array containing number of nuclei within the region at each timepoint.
     """
     
     # Initializing variables
     nuclei_count = []
-    
-    # Reading in raw grayscale images
-    raw = io.imread(image)
+
     raw_range = len(raw)
     
     # Initializing the structuring element
@@ -70,8 +55,6 @@ def NucleiCount(image, mask):
         
     return nuclei_count
 
-
-# In[ ]:
 
 
 
