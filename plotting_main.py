@@ -48,7 +48,7 @@ exp_directedness_normalized = measurements.normalize_plots(exp_directedness, [0,
 
 # Plot mean nuclear counts from PIV
 # measurements.line_plot(control_number, exp_number, dt, wound_slice, labels,
-#                        x_label='time (min)', y_label='normalized nuclear count', title='Segmentation nuclear count')
+#                        x_label='time (min)', y_label='nuclear count')
 
 # Plot mean speeds from trackpy
 control_trackpy_speed_normalized = measurements.normalize_plots(control_trackpy_speed, [0, 2], 'mean')
@@ -62,9 +62,9 @@ exp_trackpy_directedness_normalized = measurements.normalize_plots(exp_trackpy_d
 # measurements.line_plot(control_trackpy_directedness_normalized, exp_trackpy_directedness_normalized, dt*step, wound_slice//step, labels,
 #                        x_label='time (min)', y_label='normalized directedness', title='Manual directedness')
 
-# Plot mean nuclear counts from PIV
-# measurements.line_plot(control_trackpy_number, exp_trackpy_number, dt*step, wound_slice//step, labels,
-#                        x_label='time (min)', y_label='normalized nuclear count', title='Manual nuclear count')
+# Plot mean nuclear counts from segmentation
+measurements.line_plot(control_trackpy_number, exp_trackpy_number, dt*step, wound_slice//step, labels,
+                       x_label='time (min)', y_label='nuclear count')
 
 # Give bar plots for speed before and after in PIV controls
 pre_labels = ["before-wounding", "after wounding"]
@@ -75,12 +75,12 @@ measurements.bar_plot(control_speed_before, control_speed_after, pre_labels, "sp
 # Give bar plots for change in speed before and after from PIV
 control_delta_speed = [np.mean(this_speed[wound_slice:]) for this_speed in control_speed_normalized]
 exp_delta_speed = [np.mean(this_speed[wound_slice:]) for this_speed in exp_speed_normalized]
-measurements.bar_plot(control_delta_speed, exp_delta_speed, labels, "% change in speed", method='T', title='Change in speed for PIV')
+# measurements.bar_plot(control_delta_speed, exp_delta_speed, labels, "% change in speed", method='T', title='Change in speed for PIV')
 
 # Give bar plots for change in directedness before and after from PIV
 control_delta_directedness = [np.nanmax(this_directedness[wound_slice:]) for this_directedness in control_directedness_normalized]
 exp_delta_directedness = [np.nanmax(this_directedness[wound_slice:]) for this_directedness in exp_directedness_normalized]
-measurements.bar_plot(control_delta_directedness, exp_delta_directedness, labels, "% change in directedness", method='T', title='Change in directedness for PIV')
+# measurements.bar_plot(control_delta_directedness, exp_delta_directedness, labels, "% change in directedness", method='T', title='Change in directedness for PIV')
 
 # Give bar plots for directedness before and after in PIV controls
 pre_labels = ["before-wounding", "after wounding"]
@@ -93,7 +93,7 @@ control_delta_number = [np.nanmean(this_number[wound_slice//step:]) - np.nanmean
                         for this_number in control_number]
 exp_delta_number = [np.nanmean(this_number[wound_slice//step:]) - np.nanmean(this_number[:wound_slice//step])
                     for this_number in exp_number]
-measurements.bar_plot(control_delta_number, exp_delta_number, labels, "change in nuclear count", method='T', title='Change in nuclear count for PIV')
+# measurements.bar_plot(control_delta_number, exp_delta_number, labels, "change in nuclear count", method='T', title='Change in nuclear count for PIV')
 
 # Give bar plots for speed before and after in PIV controls
 pre_labels = ["before-wounding", "after wounding"]
