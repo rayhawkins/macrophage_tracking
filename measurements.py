@@ -104,7 +104,7 @@ def set_plot_params():
     return True
 
 
-def bar_plot(v1, v2, x_labels, y_label, title: str = None, method: str = None):
+def bar_plot(v1, v2, x_labels, y_label, title: str = None, method: str = None, n_colors: int = 2):
     """
     Plots a box plot comparing two groups, including the result of the statistical test specified by method.
     :param v1: n x 1 array containing values for group 1.
@@ -113,6 +113,7 @@ def bar_plot(v1, v2, x_labels, y_label, title: str = None, method: str = None):
     :param y_label: string of label for the y-axis.
     :param title: optional string to set a title for the plot.
     :param method: statistical test to be used, MW for two-sided Mann-Whitney, None for no testing.
+    :param n_colors: number of colors to be used when generating the palette.
     :return: True if completed.
     """
 
@@ -129,7 +130,7 @@ def bar_plot(v1, v2, x_labels, y_label, title: str = None, method: str = None):
     df = pd.DataFrame(np.concatenate((all_data, labels), axis=1),
                       columns=['value', 'label'])
     df['value'] = df['value'].astype('float')
-    a_palette = sns.color_palette('bright', 2)
+    a_palette = sns.color_palette('bright', n_colors)
     ax = sns.boxplot(x='label', y='value', data=df, hue='label', palette=a_palette, dodge=False, whis=100000)
     ax = sns.stripplot(x='label', y='value', data=df, color='k', alpha=0.75, dodge=False, jitter=0.05)
     if method is not None and p < 0.05:
@@ -172,6 +173,7 @@ def line_plot(v1, v2, dt, wound_slice, group_labels, x_label, y_label, title: st
 
     ax = sns.lineplot(x='time', y='value', hue='label', data=df, errorbar=('ci', 68), err_style='band',
                       lw=3, legend=False, palette=a_palette)
+    plt.axvline(0, linestyle='--', c='k', alpha=0.7)
     ax.legend(labels=[group_labels[0], '_no_legend_', group_labels[1]], frameon=False)
     ax.set_xlim([timepoints[0], timepoints[-1]])
     # ax.set_ylim(bottom=0)
